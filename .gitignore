@@ -1,0 +1,18 @@
+# virtual environment
+.venv/
+
+# python
+__pycache__/
+*.pyc
+
+# database
+*.duckdb
+
+# macOS
+.DS_Store
+
+
+data/raw/*.csv
+
+# 
+data/processed/*
