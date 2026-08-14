@@ -1,53 +1,68 @@
-from pathlib import Path
-from pyspark.sql import SparkSession, functions as F
 
-RAW = Path("data/raw")
-OUT = Path("data/processed")
+from pyspark.sql import SparkSession
 
-def main():
-    spark = (
+from pyspark.sql.types import(
+    StructType,
+    StructField,
+    IntegerType,
+    StringType,
+    DecimalType,
+    DateType
+)
+
+spark = (
         SparkSession.builder
-        .appName("RetailSalesPipeline")
+        .appName("Retail Sales Pipeline")
         .master("local[*]")
         .getOrCreate()
-    )
+        )
 
-    customers = spark.read.option("header", True).option("inferSchema", True).csv(str(RAW / "customers.csv"))
-    products = spark.read.option("header", True).option("inferSchema", True).csv(str(RAW / "products.csv"))
-    sales = spark.read.option("header", True).option("inferSchema", True).csv(str(RAW / "sales.csv"))
 
-    dim_customer = customers.dropDuplicates(["customer_id"]).filter(F.col("customer_id").isNotNull())
-    dim_product = products.dropDuplicates(["product_id"]).filter(F.col("product_id").isNotNull())
 
-    fact_sales = (
-        sales.withColumn("order_date", F.to_date("order_date"))
-        .filter((F.col("quantity") > 0) & (F.col("sales_amount") >= 0))
-        .join(dim_product.select("product_id", "unit_cost"), "product_id", "left")
-        .withColumn("cost_amount", F.round(F.col("quantity") * F.col("unit_cost"), 2))
-        .withColumn("profit_amount", F.round(F.col("sales_amount") - F.col("cost_amount"), 2))
-        .withColumn("date_key", F.date_format("order_date", "yyyyMMdd").cast("int"))
-        .drop("unit_cost")
-    )
+customer_schema = StructType(
+    [
+    StructField("customer_id", IntegerType(), nullable=False),
+    StructField("customer_name", StringType(), nullable= False),
+    StructField("segment", StringType(), nullable=False),
+    StructField("city", StringType(), nullable=False),
+    StructField("state", StringType(), nullable=False),
+    StructField("region", StringType(), nullable=False)
+    ]
+)
 
-    dim_date = (
-        fact_sales.select("order_date").distinct()
-        .withColumn("date_key", F.date_format("order_date", "yyyyMMdd").cast("int"))
-        .withColumn("year", F.year("order_date"))
-        .withColumn("quarter", F.quarter("order_date"))
-        .withColumn("month", F.month("order_date"))
-        .withColumn("month_name", F.date_format("order_date", "MMMM"))
-    )
+product_schema = StructType(
+    [
+        StructField("product_id", IntegerType(), nullable=False),
+        StructField("product_name", StringType(), nullable=False),
+        StructField("category", StringType(), nullable=False),
+        StructField("unit_cost", DecimalType(10,2), nullable=False),
+        StructField("unit_price", DecimalType(10,2), nullable=False)
+    ]
+)
 
-    for name, df in {
-        "dim_customer": dim_customer,
-        "dim_product": dim_product,
-        "dim_date": dim_date,
-        "fact_sales": fact_sales
-    }.items():
-        df.write.mode("overwrite").parquet(str(OUT / name))
-        print(f"Wrote {name}: {df.count()} rows")
+sale_schema = StructType(
+    [
+        StructField("order_id", IntegerType(), nullable=False),
+        StructField("order_date", DateType(), nullable=False),
+        StructField("customer_id", IntegerType(), nullable=False),
+        StructField("product_id", IntegerType(), nullable=False),
+        StructField("quantity", IntegerType(), nullable=False),
+        StructField("discount", DecimalType(4,2), nullable=False),
+        StructField("sales_amount", DecimalType(10,2), nullable=False)
+    ]
+)
 
-    spark.stop()
+customers = spark.read.schema(customer_schema).csv("data/raw/customers.csv", header=True)
+products = spark.read.schema(product_schema).csv("data/raw/products.csv", header=True)
+sales = spark.read.schema(sale_schema).csv("data/raw/sales.csv", header=True)
 
-if __name__ == "__main__":
-    main()
+
+customers.printSchema()
+products.printSchema()
+sales.printSchema()
+
+customers.show(5)
+products.show(5)
+sales.show(5)
+
+spark.stop()
